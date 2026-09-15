@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loyalty — Live</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<style>
+  :root {
+    --ink: #1b1b18; --paper: #faf9f6; --line: #e4e1d8;
+    --gold: #b8863f; --gold-deep: #8f6528; --muted: #6b6a63;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--paper); color:var(--ink); min-height:100vh; }
+  .shell { max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+  .tabs { display:flex; border-bottom:1px solid var(--line); background:white; position:sticky; top:0; z-index:10; }
+  .tab { flex:1; padding:14px 8px; text-align:center; font-size:13px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; background:none; border-top:none; border-left:none; border-right:none; font-family:inherit; }
+  .tab.active { color:var(--gold-deep); border-bottom-color:var(--gold); font-weight:600; }
+  .screen { display:none; padding:28px 20px 60px; flex:1; }
+  .screen.active { display:block; animation:fade .25s ease; }
+  @keyframes fade { from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:translateY(0);} }
+  h1 { font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 24px; line-height:1.5; }
+  label { display:block; font-size:13px; color:var(--muted); margin:16px 0 6px; }
+  input { width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:8px; font-size:16px; font-family:inherit; background:white; }
+  input:focus { outline:none; border-color:var(--gold); }
+  .btn { width:100%; padding:14px; border-radius:8px; border:none; font-size:15px; font-weight:600; cursor:pointer; margin-top:20px; font-family:inherit; }
+  .btn-primary { background:var(--ink); color:white; }
+  .btn[disabled] { opacity:.5; cursor:not-allowed; }
+  .card { background:white; border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:14px; }
+  .qr-wrap { display:flex; justify-content:center; margin:20px 0; }
+  #qr-render { background:white; padding:12px; border-radius:12px; border:1px solid var(--line); }
+  .balance-card { background:var(--ink); color:white; border-radius:16px; padding:28px 24px; text-align:center; margin-bottom:20px; }
+  .balance-num { font-size:44px; font-weight:700; letter-spacing:-0.02em; margin:4px 0; }
+  .balance-label { font-size:13px; color:rgba(255,255,255,.6); text-transform:uppercase; letter-spacing:.06em; }
+  .progress-track { height:8px; background:rgba(255,255,255,.15); border-radius:4px; margin-top:18px; overflow:hidden; }
+  .progress-fill { height:100%; background:var(--gold); border-radius:4px; transition:width .4s ease; }
+  .progress-note { font-size:12px; color:rgba(255,255,255,.65); margin-top:8px; text-align:left; }
+  .customer-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .customer-row:last-child { border-bottom:none; }
+  .cname { font-weight:600; font-size:15px; }
+  .cphone { font-size:12px; color:var(--muted); }
+  .cpoints { font-size:15px; font-weight:600; color:var(--gold-deep); }
+  video { width:100%; border-radius:14px; background:#000; }
+  .scan-frame { position:relative; margin-bottom:16px; }
+  .selected-customer { background:white; border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .selected-name { font-size:17px; font-weight:700; }
+  .selected-balance { font-size:13px; color:var(--muted); margin-top:2px; }
+  .bucket-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+  .bucket { padding:16px 8px; border-radius:10px; border:1px solid var(--line); background:white; text-align:center; cursor:pointer; font-size:13px; }
+  .bucket:active { border-color:var(--gold); background:#fdf9f0; }
+  .reward-btn { width:100%; text-align:left; padding:14px; border-radius:10px; border:1px solid var(--line); background:white; margin-bottom:8px; cursor:pointer; font-family:inherit; font-size:14px; display:flex; justify-content:space-between; align-items:center; }
+  .reward-btn.disabled { opacity:.4; }
+  .reward-cost { font-size:12px; color:var(--muted); }
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:white; padding:12px 20px; border-radius:30px; font-size:13.5px; opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; white-space:nowrap; max-width:90%; z-index:100; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(-4px); }
+  .note { font-size:12px; color:var(--muted); text-align:center; margin-top:24px; line-height:1.6; border-top:1px solid var(--line); padding-top:16px; }
+  .link-box { background:#f3ede1; border:1px solid #e6dcc4; border-radius:8px; padding:12px; font-size:12px; word-break:break-all; margin-top:12px; }
+  .spinner-note { text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="tabs">
+    <button class="tab active" data-screen="signup">Sign Up</button>
+    <button class="tab" data-screen="staff">Staff</button>
+    <button class="tab" data-screen="customer">Customer</button>
+  </div>
+
+  <!-- SIGNUP -->
+  <div class="screen active" id="signup">
+    <h1>Join the loyalty card</h1>
+    <p class="sub" id="signup-sub">Loading business...</p>
+    <div id="signup-form">
+      <label>Name</label>
+      <input id="su-name" placeholder="Jamie Smith">
+      <label>Phone number</label>
+      <input id="su-phone" placeholder="07123 456789">
+      <button class="btn btn-primary" id="signup-btn" onclick="doSignup()" disabled>Join now</button>
+    </div>
+    <div id="signup-result" style="display:none; margin-top:28px;">
+      <div class="card" style="text-align:center;">
+        <p class="sub" style="margin-bottom:6px;">You're in! This is your card —</p>
+        <div class="qr-wrap"><div id="qr-render"></div></div>
+        <p class="sub" style="margin-top:6px; margin-bottom:0;">Show this every visit to earn points.</p>
+        <div class="link-box" id="signup-link"></div>
+      </div>
+      <button class="btn btn-primary" onclick="resetSignup()">Sign up another</button>
+    </div>
+  </div>
+
+  <!-- STAFF -->
+  <div class="screen" id="staff">
+    <h1>Staff — Add or Redeem</h1>
+    <p class="sub">Scan the customer's QR, or pick from the list.</p>
+
+    <div class="scan-frame" id="scan-frame" style="display:none;">
+      <video id="video" playsinline></video>
+    </div>
+    <button class="btn btn-primary" id="scan-toggle" onclick="toggleScan()">Start camera scan</button>
+
+    <label>Or select manually</label>
+    <div class="card" id="customer-list"><div class="spinner-note">Loading customers…</div></div>
+
+    <div class="selected-customer" id="selected-customer" style="display:none;">
+      <div class="selected-name" id="sel-name"></div>
+      <div class="selected-balance" id="sel-balance"></div>
+    </div>
+
+    <div id="staff-actions" style="display:none;">
+      <label style="margin-top:0;">Add points</label>
+      <div class="bucket-grid">
+        <div class="bucket" onclick="addPoints(5)">£0–5<br><b>+5 pts</b></div>
+        <div class="bucket" onclick="addPoints(10)">£5–10<br><b>+10 pts</b></div>
+        <div class="bucket" onclick="addPoints(20)">£10–20<br><b>+20 pts</b></div>
+        <div class="bucket" onclick="addPoints(30)">£20+<br><b>+30 pts</b></div>
+      </div>
+      <label>Redeem reward</label>
+      <div id="reward-buttons"></div>
+    </div>
+  </div>
+
+  <!-- CUSTOMER -->
+  <div class="screen" id="customer">
+    <h1>Your Loyalty Card</h1>
+    <p class="sub" id="cust-business-name">—</p>
+    <div id="customer-content"><div class="spinner-note">Open this from your personal link to see your balance.</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const SUPABASE_URL = 'https://npyubmodaeazgbmydzcp.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_RAgZBxNi2WNjUyhbzddkMQ_cQyoKmgC';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let business = null;
+  let rewards = [];
+  let selectedCustomer = null;
+  let scanning = false;
+  let stream = null;
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById(t.dataset.screen).classList.add('active');
+      if (t.dataset.screen === 'staff') loadCustomerList();
+    });
+  });
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  async function init() {
+    const { data, error } = await sb.from('businesses').select('*').eq('name', 'Demo Café').single();
+    if (error || !data) {
+      document.getElementById('signup-sub').textContent = 'Could not load business — check Supabase setup.';
+      return;
+    }
+    business = data;
+    document.getElementById('signup-sub').textContent = 'Scan this at the till once — takes 15 seconds.';
+    document.getElementById('signup-btn').disabled = false;
+    document.getElementById('cust-business-name').textContent = business.name;
+
+    const { data: rw } = await sb.from('rewards').select('*').eq('business_id', business.id).order('cost');
+    rewards = rw || [];
+
+    // If URL has ?customer=ID, load the customer page directly
+    const params = new URLSearchParams(window.location.search);
+    const custId = params.get('customer');
+    if (custId) {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+      document.querySelector('[data-screen="customer"]').classList.add('active');
+      document.getElementById('customer').classList.add('active');
+      loadCustomerView(custId);
+      setInterval(() => loadCustomerView(custId), 4000);
+    }
+  }
+
+  async function doSignup() {
+    const name = document.getElementById('su-name').value.trim();
+    const phone = document.getElementById('su-phone').value.trim();
+    if (!name || !phone) { showToast('Enter a name and phone number'); return; }
+
+    const { data, error } = await sb.from('customers')
+      .insert({ business_id: business.id, name, phone, points: 0 })
+      .select().single();
+
+    if (error) { showToast('Error creating customer'); console.error(error); return; }
+
+    const link = window.location.origin + window.location.pathname + '?customer=' + data.id;
+    document.getElementById('signup-form').style.display = 'none';
+    document.getElementById('signup-result').style.display = 'block';
+    document.getElementById('signup-link').textContent = link;
+    document.getElementById('qr-render').innerHTML = '';
+    new QRCode(document.getElementById('qr-render'), { text: link, width: 180, height: 180 });
+    showToast('Customer created');
+  }
+
+  function resetSignup() {
+    document.getElementById('su-name').value = '';
+    document.getElementById('su-phone').value = '';
+    document.getElementById('signup-form').style.display = 'block';
+    document.getElementById('signup-result').style.display = 'none';
+  }
+
+  async function loadCustomerList() {
+    const { data, error } = await sb.from('customers').select('*').eq('business_id', business.id).order('created_at', { ascending: false }).limit(20);
+    const el = document.getElementById('customer-list');
+    if (error || !data || data.length === 0) { el.innerHTML = '<div class="spinner-note">No customers yet — sign someone up first.</div>'; return; }
+    el.innerHTML = data.map(c => `
+      <div class="customer-row" onclick="selectCustomer('${c.id}')">
+        <div><div class="cname">${c.name}</div><div class="cphone">${c.phone}</div></div>
+        <div class="cpoints">${c.points} pts</div>
+      </div>`).join('');
+  }
+
+  async function selectCustomer(id) {
+    const { data, error } = await sb.from('customers').select('*').eq('id', id).single();
+    if (error || !data) { showToast('Could not load customer'); return; }
+    selectedCustomer = data;
+    renderStaffSelection();
+    showToast('Selected: ' + data.name);
+  }
+
+  function renderStaffSelection() {
+    document.getElementById('selected-customer').style.display = 'block';
+    document.getElementById('staff-actions').style.display = 'block';
+    document.getElementById('sel-name').textContent = selectedCustomer.name;
+    document.getElementById('sel-balance').textContent = selectedCustomer.points + ' points available';
+    document.getElementById('reward-buttons').innerHTML = rewards.map(r => `
+      <button class="reward-btn ${selectedCustomer.points < r.cost ? 'disabled' : ''}" onclick="redeem('${r.id}', ${r.cost}, '${r.name}')">
+        <span>${r.name}</span><span class="reward-cost">${r.cost} pts</span>
+      </button>`).join('');
+  }
+
+  async function addPoints(n) {
+    if (!selectedCustomer) return;
+    const newPoints = selectedCustomer.points + n;
+    const { error: e1 } = await sb.from('customers').update({ points: newPoints, last_activity: new Date().toISOString() }).eq('id', selectedCustomer.id);
+    const { error: e2 } = await sb.from('transactions').insert({ customer_id: selectedCustomer.id, business_id: business.id, type: 'add', amount: n });
+    if (e1 || e2) { showToast('Error adding points'); return; }
+    selectedCustomer.points = newPoints;
+    renderStaffSelection();
+    loadCustomerList();
+    showToast('+' + n + ' points — new balance ' + newPoints);
+  }
+
+  async function redeem(rewardId, cost, name) {
+    if (!selectedCustomer) return;
+    if (selectedCustomer.points < cost) { showToast('Not enough points — ' + (cost - selectedCustomer.points) + ' more needed'); return; }
+    const newPoints = selectedCustomer.points - cost;
+    const { error: e1 } = await sb.from('customers').update({ points: newPoints, last_activity: new Date().toISOString() }).eq('id', selectedCustomer.id);
+    const { error: e2 } = await sb.from('transactions').insert({ customer_id: selectedCustomer.id, business_id: business.id, type: 'redeem', amount: cost, reward_name: name });
+    if (e1 || e2) { showToast('Error redeeming'); return; }
+    selectedCustomer.points = newPoints;
+    renderStaffSelection();
+    loadCustomerList();
+    showToast(name + ' redeemed — new balance ' + newPoints);
+  }
+
+  async function loadCustomerView(id) {
+    const { data, error } = await sb.from('customers').select('*').eq('id', id).single();
+    const el = document.getElementById('customer-content');
+    if (error || !data) { el.innerHTML = '<div class="spinner-note">Could not find this card.</div>'; return; }
+
+    const nextReward = rewards.filter(r => r.cost > data.points).sort((a,b) => a.cost - b.cost)[0];
+    const target = nextReward ? nextReward.cost : (rewards[rewards.length-1] ? rewards[rewards.length-1].cost : data.points);
+    const pct = Math.min(100, Math.round((data.points / target) * 100));
+    const note = nextReward ? (target - data.points) + ' points to your next ' + nextReward.name : 'All rewards unlocked!';
+
+    el.innerHTML = `
+      <div class="balance-card">
+        <div class="balance-label">Your points</div>
+        <div class="balance-num">${data.points}</div>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+        <div class="progress-note">${note}</div>
+      </div>
+      <div class="note">This link is yours — bookmark it or reopen the text we sent. No app, no login.</div>
+    `;
+  }
+
+  // Camera scanning
+  async function toggleScan() {
+    const frame = document.getElementById('scan-frame');
+    const btn = document.getElementById('scan-toggle');
+    if (scanning) {
+      scanning = false;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      frame.style.display = 'none';
+      btn.textContent = 'Start camera scan';
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      video.play();
+      frame.style.display = 'block';
+      btn.textContent = 'Stop camera scan';
+      scanning = true;
+      scanLoop(video);
+    } catch (e) {
+      showToast('Camera unavailable — use the list below');
+    }
+  }
+
+  function scanLoop(video) {
+    if (!scanning) return;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        try {
+          const url = new URL(code.data);
+          const id = url.searchParams.get('customer');
+          if (id) {
+            toggleScan();
+            selectCustomer(id);
+            return;
+          }
+        } catch (e) { /* not a valid URL, keep scanning */ }
+      }
+    }
+    requestAnimationFrame(() => scanLoop(video));
+  }
+
+  init();
+</script>
+</body>
+</html>
