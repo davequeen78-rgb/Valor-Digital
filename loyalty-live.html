@@ -135,6 +135,10 @@
   const SUPABASE_URL = 'https://npyubmodaeazgbmydzcp.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_RAgZBxNi2WNjUyhbzddkMQ_cQyoKmgC';
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // The Edge Function's real deployed address — its dashboard display name
+  // ("send-ghl-message") is NOT the same as its actual URL slug below.
+  // Always use this constant so the two can't drift out of sync again.
+  const GHL_FUNCTION_URL = SUPABASE_URL + '/functions/v1/hyper-handler';
 
   let business = null;
   let rewards = [];
@@ -242,7 +246,7 @@
 
     // Text the customer their personal link via GHL
     try {
-      const res = await fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+      const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -313,7 +317,7 @@
     showToast('+' + n + ' points — new balance ' + newPoints);
 
     // Log this visit to GHL for reporting
-    fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+    fetch(GHL_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
@@ -333,7 +337,7 @@
     showToast(name + ' redeemed — new balance ' + newPoints);
 
     // Log this visit to GHL for reporting
-    fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+    fetch(GHL_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
