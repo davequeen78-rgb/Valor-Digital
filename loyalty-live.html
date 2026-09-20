@@ -101,8 +101,9 @@
     </div>
     <button class="btn btn-primary" id="scan-toggle" onclick="toggleScan()">Start camera scan</button>
 
-    <label>Or select manually</label>
-    <div class="card" id="customer-list"><div class="spinner-note">Loading customers…</div></div>
+    <label>Or look up by phone number</label>
+    <input id="customer-search" placeholder="Enter phone number…" style="margin-bottom:12px;" oninput="filterCustomerList()">
+    <div class="card" id="customer-list"><div class="spinner-note">Type a customer's phone number above.</div></div>
 
     <div class="selected-customer" id="selected-customer" style="display:none;">
       <div class="selected-name" id="sel-name"></div>
@@ -280,15 +281,34 @@
     document.getElementById('signup-result').style.display = 'none';
   }
 
+  let allCustomers = [];
+
   async function loadCustomerList() {
-    const { data, error } = await sb.from('customers').select('*').eq('business_id', business.id).order('created_at', { ascending: false }).limit(20);
+    const { data, error } = await sb.from('customers').select('*').eq('business_id', business.id).order('created_at', { ascending: false }).limit(1000);
+    allCustomers = data || [];
+    filterCustomerList();
+    if (error) console.error(error);
+  }
+
+  function renderCustomerList(list) {
     const el = document.getElementById('customer-list');
-    if (error || !data || data.length === 0) { el.innerHTML = '<div class="spinner-note">No customers yet — sign someone up first.</div>'; return; }
-    el.innerHTML = data.map(c => `
+    if (!list || list.length === 0) { el.innerHTML = '<div class="spinner-note">No match found for that number.</div>'; return; }
+    el.innerHTML = list.slice(0, 20).map(c => `
       <div class="customer-row" onclick="selectCustomer('${c.id}')">
         <div><div class="cname">${escapeHtml(c.name)}</div><div class="cphone">${escapeHtml(c.phone)}</div></div>
         <div class="cpoints">${c.points} pts</div>
       </div>`).join('');
+    if (list.length > 20) {
+      el.innerHTML += `<div class="spinner-note">${list.length - 20} more — keep typing to narrow it down</div>`;
+    }
+  }
+
+  function filterCustomerList() {
+    const q = document.getElementById('customer-search').value.trim().replace(/[\s\-()]/g, '');
+    const el = document.getElementById('customer-list');
+    if (!q) { el.innerHTML = '<div class="spinner-note">Type a customer\'s phone number above.</div>'; return; }
+    const filtered = allCustomers.filter(c => c.phone.replace(/[\s\-()]/g, '').includes(q));
+    renderCustomerList(filtered);
   }
 
   async function selectCustomer(id) {
