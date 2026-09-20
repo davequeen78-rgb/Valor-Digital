@@ -6,7 +6,7 @@
 <title>Valor Loyalty</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
   :root {
     --ink: #1b1b18; --paper: #faf9f6; --line: #e4e1d8;
@@ -466,6 +466,10 @@
   function scanLoop(video) {
     if (!scanning) return;
     const statusEl = document.getElementById('scan-status');
+    if (typeof jsQR === 'undefined') {
+      if (statusEl) statusEl.textContent = 'Scanner failed to load — use the phone lookup instead';
+      return;
+    }
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       if (statusEl) statusEl.textContent = 'Waiting for camera to start…';
       requestAnimationFrame(() => scanLoop(video));
