@@ -177,7 +177,16 @@
   }
 
   async function init() {
-    const { data, error } = await sb.from('businesses').select('*').eq('name', 'Demo Café').single();
+    // Which business this link belongs to — every link now carries
+    // ?business=<slug>. Falls back to Demo Café for any old link that
+    // doesn't have it yet, so nothing already out there breaks.
+    const initParams = new URLSearchParams(window.location.search);
+    const businessSlug = initParams.get('business');
+
+    let query = sb.from('businesses').select('*');
+    query = businessSlug ? query.eq('slug', businessSlug) : query.eq('name', 'Demo Café');
+    const { data, error } = await query.single();
+
     if (error || !data) {
       document.getElementById('signup-sub').textContent = 'Could not load business — check Supabase setup.';
       return;
@@ -250,7 +259,7 @@
 
     if (error) { showToast('Error creating customer'); console.error(error); return; }
 
-    const link = window.location.origin + window.location.pathname + '?customer=' + data.id;
+    const link = window.location.origin + window.location.pathname + '?customer=' + data.id + (business.slug ? '&business=' + encodeURIComponent(business.slug) : '');
     document.getElementById('signup-form').style.display = 'none';
     document.getElementById('signup-result').style.display = 'block';
     document.getElementById('signup-link').textContent = link;
@@ -407,6 +416,26 @@
       },
       body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
+
+    // Ask for a Google review a few seconds after redemption, as its own
+    // separate message — fires every single redeem, not just the first one.
+    setTimeout(() => {
+      fetch(GHL_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({
+          action: 'request_review',
+          businessId: business.id,
+          phone: selectedCustomer.phone,
+          name: selectedCustomer.name,
+          businessName: business.name,
+          reviewLink: business.google_review_link || null
+        })
+      }).catch(e => console.error('Review request failed', e));
+    }, 5000);
   }
 
   async function sendPromo() {
