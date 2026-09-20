@@ -113,7 +113,8 @@
     <div id="staff-actions" style="display:none;">
       <label style="margin-top:0;">Add points for this visit</label>
       <p class="sub" id="points-rate-note" style="margin-top:0;">— points per £ loading —</p>
-      <input id="spend-amount" type="number" inputmode="decimal" placeholder="Amount spent (£)" style="margin-bottom:10px;">
+      <input id="spend-amount" type="number" inputmode="decimal" placeholder="Amount spent (£)" style="margin-bottom:6px;" oninput="updateSpendPreview()">
+      <p class="sub" id="spend-preview" style="margin:0 0 10px; font-weight:600;">Enter an amount above</p>
       <button class="btn btn-primary" onclick="addPointsFromSpend()">Add points</button>
       <label>Redeem reward</label>
       <div id="reward-buttons"></div>
@@ -335,6 +336,16 @@
       </button>`).join('');
   }
 
+  function updateSpendPreview() {
+    const amount = parseFloat(document.getElementById('spend-amount').value);
+    const el = document.getElementById('spend-preview');
+    if (!amount || amount <= 0) { el.textContent = 'Enter an amount above'; return; }
+    const points = Math.floor(amount / poundsPerPoint);
+    el.textContent = points > 0
+      ? `= ${points} point${points === 1 ? '' : 's'}`
+      : `Under £${poundsPerPoint} — no points this visit`;
+  }
+
   function addPointsFromSpend() {
     const input = document.getElementById('spend-amount');
     const amount = parseFloat(input.value);
@@ -342,6 +353,7 @@
     const points = Math.floor(amount / poundsPerPoint);
     if (points <= 0) { showToast(`Under £${poundsPerPoint} — no points earned this visit`); return; }
     input.value = '';
+    document.getElementById('spend-preview').textContent = 'Enter an amount above';
     addPoints(points);
   }
 
