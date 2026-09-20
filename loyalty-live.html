@@ -111,13 +111,10 @@
     </div>
 
     <div id="staff-actions" style="display:none;">
-      <label style="margin-top:0;">Add points</label>
-      <div class="bucket-grid">
-        <div class="bucket" onclick="addPoints(5)">£0–5<br><b>+5 pts</b></div>
-        <div class="bucket" onclick="addPoints(10)">£5–10<br><b>+10 pts</b></div>
-        <div class="bucket" onclick="addPoints(20)">£10–20<br><b>+20 pts</b></div>
-        <div class="bucket" onclick="addPoints(30)">£20+<br><b>+30 pts</b></div>
-      </div>
+      <label style="margin-top:0;">Add points for this visit</label>
+      <p class="sub" id="points-rate-note" style="margin-top:0;">— points per £ loading —</p>
+      <input id="spend-amount" type="number" inputmode="decimal" placeholder="Amount spent (£)" style="margin-bottom:10px;">
+      <button class="btn btn-primary" onclick="addPointsFromSpend()">Add points</button>
       <label>Redeem reward</label>
       <div id="reward-buttons"></div>
     </div>
@@ -147,6 +144,7 @@
   let selectedCustomer = null;
   let scanning = false;
   let stream = null;
+  let poundsPerPoint = 5;
 
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => {
@@ -181,6 +179,13 @@
     document.getElementById('signup-sub').textContent = 'Scan this at the till once — takes 15 seconds.';
     document.getElementById('signup-btn').disabled = false;
     document.getElementById('cust-business-name').textContent = business.name;
+
+    // Points formula: this business's own £-per-point ratio, defaulting to
+    // £5 = 1 point if the business hasn't set one. Same formula for every
+    // business — only the ratio itself changes, never hardcoded ranges.
+    poundsPerPoint = business.pounds_per_point || 5;
+    const noteEl = document.getElementById('points-rate-note');
+    if (noteEl) noteEl.textContent = `£${poundsPerPoint} spent = 1 point`;
 
     const { data: rw } = await sb.from('rewards').select('*').eq('business_id', business.id).order('cost');
     rewards = rw || [];
@@ -328,6 +333,16 @@
       <button class="reward-btn ${selectedCustomer.points < r.cost ? 'disabled' : ''}" onclick="redeem('${r.id}', ${r.cost}, '${r.name}')">
         <span>${r.name}</span><span class="reward-cost">${r.cost} pts</span>
       </button>`).join('');
+  }
+
+  function addPointsFromSpend() {
+    const input = document.getElementById('spend-amount');
+    const amount = parseFloat(input.value);
+    if (!amount || amount <= 0) { showToast('Enter the amount spent'); return; }
+    const points = Math.floor(amount / poundsPerPoint);
+    if (points <= 0) { showToast(`Under £${poundsPerPoint} — no points earned this visit`); return; }
+    input.value = '';
+    addPoints(points);
   }
 
   async function addPoints(n) {
