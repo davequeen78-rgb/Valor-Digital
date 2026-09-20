@@ -84,6 +84,7 @@
       <div class="card" style="text-align:center;">
         <p class="sub" style="margin-bottom:6px;">You're in! This is your card —</p>
         <div class="qr-wrap"><div id="qr-render"></div></div>
+        <p style="font-size:15px; font-weight:600; margin:4px 0 0;" id="signup-points">0 points</p>
         <p class="sub" style="margin-top:6px; margin-bottom:0;">Show this every visit to earn points.</p>
         <div class="link-box" id="signup-link"></div>
       </div>
@@ -240,6 +241,7 @@
     document.getElementById('signup-form').style.display = 'none';
     document.getElementById('signup-result').style.display = 'block';
     document.getElementById('signup-link').textContent = link;
+    document.getElementById('signup-points').textContent = data.points + ' points';
     document.getElementById('qr-render').innerHTML = '';
     new QRCode(document.getElementById('qr-render'), { text: link, width: 180, height: 180 });
     showToast('Customer created');
@@ -370,8 +372,20 @@
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
         <div class="progress-note">${note}</div>
       </div>
+      <div class="card" style="text-align:center;">
+        <div class="qr-wrap"><div id="cust-qr-render"></div></div>
+        <p class="sub" style="margin:6px 0 0;">Show this to staff every visit to earn points.</p>
+      </div>
       <div class="note">This link is yours — bookmark it or reopen the text we sent. No app, no login.</div>
     `;
+
+    // Render the customer's own QR (same link as this page) so staff have
+    // something to scan on this and every future visit.
+    const qrEl = document.getElementById('cust-qr-render');
+    if (qrEl) {
+      qrEl.innerHTML = '';
+      new QRCode(qrEl, { text: window.location.href, width: 180, height: 180 });
+    }
   }
 
   // Camera scanning
