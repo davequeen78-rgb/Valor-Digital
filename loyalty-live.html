@@ -120,6 +120,11 @@
       <label>Redeem reward</label>
       <div id="reward-buttons"></div>
     </div>
+
+    <label style="margin-top:24px;">Send a promotion to everyone</label>
+    <p class="sub" style="margin-top:0;">Goes out as a text to every customer signed up here — use sparingly.</p>
+    <textarea id="promo-message" rows="3" placeholder="e.g. This week only: double points on everything!" style="width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:8px; font-size:15px; font-family:inherit; resize:vertical; margin-bottom:10px;"></textarea>
+    <button class="btn btn-primary" onclick="sendPromo()">Send to all customers</button>
   </div>
 
   <!-- CUSTOMER -->
@@ -263,6 +268,7 @@
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
         body: JSON.stringify({
+          businessId: business.id,
           phone: phone,
           name: name,
           message: `Hi ${name}, you're in! Here's your loyalty card: ${link}`
@@ -376,7 +382,7 @@
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + SUPABASE_KEY,
       },
-      body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
+      body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
   }
 
@@ -399,8 +405,36 @@
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + SUPABASE_KEY,
       },
-      body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
+      body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
+  }
+
+  async function sendPromo() {
+    const input = document.getElementById('promo-message');
+    const message = input.value.trim();
+    if (!message) { showToast('Type a message first'); return; }
+    if (!confirm(`Send this to every customer of ${business.name}?\n\n"${message}"`)) return;
+
+    showToast('Sending…', true);
+    try {
+      const res = await fetch(GHL_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ action: 'send_promo', businessId: business.id, message })
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast(`Sent to ${result.sent} of ${result.total} customers` + (result.failed ? ` (${result.failed} failed)` : ''), true);
+        input.value = '';
+      } else {
+        showToast('Promo failed: ' + (result.error || JSON.stringify(result)).slice(0, 120), true);
+      }
+    } catch (e) {
+      showToast('Promo failed: ' + String(e).slice(0, 120), true);
+    }
   }
 
   async function loadCustomerView(id) {
