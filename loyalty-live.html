@@ -71,7 +71,7 @@
 
   <!-- SIGNUP -->
   <div class="screen active" id="signup">
-    <h1>Join the loyalty card</h1>
+    <h1>Valor Loyalty</h1>
     <p class="sub" id="signup-sub">Loading business...</p>
     <div id="signup-form">
       <label>Name</label>
@@ -160,6 +160,12 @@
     setTimeout(() => t.classList.remove('show'), 2200);
   }
 
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
   async function init() {
     const { data, error } = await sb.from('businesses').select('*').eq('name', 'Demo Café').single();
     if (error || !data) {
@@ -174,27 +180,56 @@
     const { data: rw } = await sb.from('rewards').select('*').eq('business_id', business.id).order('cost');
     rewards = rw || [];
 
-    // If URL has ?customer=ID, load the customer page directly
+    // Work out which single screen this link is for, and lock the page to it.
+    // A customer's personal link, the till's signup link, and staff's own link
+    // must never show each other's tabs or tools.
     const params = new URLSearchParams(window.location.search);
     const custId = params.get('customer');
-    if (custId) {
-      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    const mode = params.get('mode');
+
+    function lockToScreen(screenName) {
+      document.querySelector('.tabs').style.display = 'none';
       document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
-      document.querySelector('[data-screen="customer"]').classList.add('active');
-      document.getElementById('customer').classList.add('active');
+      document.getElementById(screenName).classList.add('active');
+    }
+
+    if (custId) {
+      lockToScreen('customer');
       loadCustomerView(custId);
       setInterval(() => loadCustomerView(custId), 4000);
+    } else if (mode === 'staff') {
+      lockToScreen('staff');
+      loadCustomerList();
+    } else if (mode === 'signup') {
+      lockToScreen('signup');
     }
+    // No params at all = internal test view only, keeps all 3 tabs for dev use.
+    // Real links given out to customers/staff/till must always include one
+    // of the above params.
   }
 
   async function doSignup() {
     const name = document.getElementById('su-name').value.trim();
-    const phone = document.getElementById('su-phone').value.trim();
-    if (!name || !phone) { showToast('Enter a name and phone number'); return; }
+    const rawPhone = document.getElementById('su-phone').value.trim();
+    if (!name || !rawPhone) { showToast('Enter a name and phone number'); return; }
+    const phone = rawPhone.replace(/[\s\-()]/g, '');
 
-    const { data, error } = await sb.from('customers')
-      .insert({ business_id: business.id, name, phone, points: 0 })
-      .select().single();
+    // Check if this phone number already signed up for this business —
+    // reuse that record instead of creating a duplicate.
+    const { data: existing } = await sb.from('customers')
+      .select('*').eq('business_id', business.id).eq('phone', phone).maybeSingle();
+
+    let data, error;
+    if (existing) {
+      ({ data, error } = await sb.from('customers')
+        .update({ name })
+        .eq('id', existing.id)
+        .select().single());
+    } else {
+      ({ data, error } = await sb.from('customers')
+        .insert({ business_id: business.id, name, phone, points: 0 })
+        .select().single());
+    }
 
     if (error) { showToast('Error creating customer'); console.error(error); return; }
 
@@ -222,9 +257,11 @@
         showToast('Text sent with their card link');
       } else {
         console.error('Message send failed', result);
+        showToast('Card created, but text failed to send — check Supabase Edge Function logs');
       }
     } catch (e) {
       console.error('Could not reach messaging function', e);
+      showToast('Card created, but text failed to send — check Supabase Edge Function logs');
     }
   }
 
@@ -241,7 +278,7 @@
     if (error || !data || data.length === 0) { el.innerHTML = '<div class="spinner-note">No customers yet — sign someone up first.</div>'; return; }
     el.innerHTML = data.map(c => `
       <div class="customer-row" onclick="selectCustomer('${c.id}')">
-        <div><div class="cname">${c.name}</div><div class="cphone">${c.phone}</div></div>
+        <div><div class="cname">${escapeHtml(c.name)}</div><div class="cphone">${escapeHtml(c.phone)}</div></div>
         <div class="cpoints">${c.points} pts</div>
       </div>`).join('');
   }
