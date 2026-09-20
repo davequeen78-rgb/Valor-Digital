@@ -98,6 +98,7 @@
 
     <div class="scan-frame" id="scan-frame" style="display:none;">
       <video id="video" playsinline autoplay muted></video>
+      <div id="scan-status" style="text-align:center; font-size:13px; color:var(--muted); margin-top:8px;">Scanning…</div>
     </div>
     <button class="btn btn-primary" id="scan-toggle" onclick="toggleScan()">Start camera scan</button>
 
@@ -460,26 +461,38 @@
     }
   }
 
+  let scanAttempts = 0;
+
   function scanLoop(video) {
     if (!scanning) return;
+    const statusEl = document.getElementById('scan-status');
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      if (statusEl) statusEl.textContent = 'Waiting for camera to start…';
+      requestAnimationFrame(() => scanLoop(video));
+      return;
+    }
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-      if (code) {
-        try {
-          const url = new URL(code.data);
-          const id = url.searchParams.get('customer');
-          if (id) {
-            toggleScan();
-            selectCustomer(id);
-            return;
-          }
-        } catch (e) { /* not a valid URL, keep scanning */ }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    scanAttempts++;
+    if (statusEl) statusEl.textContent = code ? 'Code detected — checking…' : `Scanning… point steadily at the code`;
+    if (code) {
+      try {
+        const url = new URL(code.data);
+        const id = url.searchParams.get('customer');
+        if (id) {
+          toggleScan();
+          selectCustomer(id);
+          return;
+        } else if (statusEl) {
+          statusEl.textContent = 'That QR isn\'t a Valor Loyalty card — try the phone lookup instead';
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Unreadable code — try moving closer or improving lighting';
       }
     }
     requestAnimationFrame(() => scanLoop(video));
