@@ -248,7 +248,10 @@
     try {
       const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
         body: JSON.stringify({
           phone: phone,
           name: name,
@@ -319,7 +322,10 @@
     // Log this visit to GHL for reporting
     fetch(GHL_FUNCTION_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+      },
       body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
   }
@@ -339,7 +345,10 @@
     // Log this visit to GHL for reporting
     fetch(GHL_FUNCTION_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+      },
       body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
   }
