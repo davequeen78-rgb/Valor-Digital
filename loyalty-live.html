@@ -450,9 +450,9 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       const video = document.getElementById('video');
-      video.srcObject = stream;
-      video.play();
       frame.style.display = 'block';
+      video.srcObject = stream;
+      await video.play().catch(() => {});
       btn.textContent = 'Stop camera scan';
       scanning = true;
       scanLoop(video);
