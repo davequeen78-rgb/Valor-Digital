@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Loyalty — Live</title>
+<title>Valor Loyalty</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
@@ -97,7 +97,7 @@
     <p class="sub">Scan the customer's QR, or pick from the list.</p>
 
     <div class="scan-frame" id="scan-frame" style="display:none;">
-      <video id="video" playsinline></video>
+      <video id="video" playsinline autoplay muted></video>
     </div>
     <button class="btn btn-primary" id="scan-toggle" onclick="toggleScan()">Start camera scan</button>
 
@@ -124,7 +124,7 @@
 
   <!-- CUSTOMER -->
   <div class="screen" id="customer">
-    <h1>Your Loyalty Card</h1>
+    <h1>Valor Loyalty</h1>
     <p class="sub" id="cust-business-name">—</p>
     <div id="customer-content"><div class="spinner-note">Open this from your personal link to see your balance.</div></div>
   </div>
@@ -205,6 +205,27 @@
     document.getElementById('qr-render').innerHTML = '';
     new QRCode(document.getElementById('qr-render'), { text: link, width: 180, height: 180 });
     showToast('Customer created');
+
+    // Text the customer their personal link via GHL
+    try {
+      const res = await fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: phone,
+          name: name,
+          message: `Hi ${name}, you're in! Here's your loyalty card: ${link}`
+        })
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast('Text sent with their card link');
+      } else {
+        console.error('Message send failed', result);
+      }
+    } catch (e) {
+      console.error('Could not reach messaging function', e);
+    }
   }
 
   function resetSignup() {
@@ -254,6 +275,13 @@
     renderStaffSelection();
     loadCustomerList();
     showToast('+' + n + ' points — new balance ' + newPoints);
+
+    // Log this visit to GHL for reporting
+    fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
+    }).catch(e => console.error('GHL visit log failed', e));
   }
 
   async function redeem(rewardId, cost, name) {
@@ -267,6 +295,13 @@
     renderStaffSelection();
     loadCustomerList();
     showToast(name + ' redeemed — new balance ' + newPoints);
+
+    // Log this visit to GHL for reporting
+    fetch('https://npyubmodaeazgbmydzcp.supabase.co/functions/v1/send-ghl-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'log_visit', customerName: selectedCustomer.name, businessName: business.name })
+    }).catch(e => console.error('GHL visit log failed', e));
   }
 
   async function loadCustomerView(id) {
