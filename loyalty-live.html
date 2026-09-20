@@ -156,11 +156,11 @@
     });
   });
 
-  function showToast(msg) {
+  function showToast(msg, longer) {
     const t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2200);
+    setTimeout(() => t.classList.remove('show'), longer ? 8000 : 2200);
   }
 
   function escapeHtml(str) {
@@ -260,11 +260,11 @@
         showToast('Text sent with their card link');
       } else {
         console.error('Message send failed', result);
-        showToast('Card created, but text failed to send — check Supabase Edge Function logs');
+        showToast('Text failed: ' + (result.error || JSON.stringify(result)).slice(0, 120), true);
       }
     } catch (e) {
       console.error('Could not reach messaging function', e);
-      showToast('Card created, but text failed to send — check Supabase Edge Function logs');
+      showToast('Text failed: ' + String(e).slice(0, 120), true);
     }
   }
 
