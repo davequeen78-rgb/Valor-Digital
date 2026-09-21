@@ -141,9 +141,6 @@
   const SUPABASE_URL = 'https://npyubmodaeazgbmydzcp.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_RAgZBxNi2WNjUyhbzddkMQ_cQyoKmgC';
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  // The Edge Function's real deployed address — its dashboard display name
-  // ("send-ghl-message") is NOT the same as its actual URL slug below.
-  // Always use this constant so the two can't drift out of sync again.
   const GHL_FUNCTION_URL = SUPABASE_URL + '/functions/v1/hyper-handler';
 
   let business = null;
@@ -177,13 +174,10 @@
   }
 
   async function init() {
-    // Which business this link belongs to — every link now carries
-    // ?business=<slug>. Falls back to Demo Café for any old link that
-    // doesn't have it yet, so nothing already out there breaks.
     const initParams = new URLSearchParams(window.location.search);
     const businessSlug = initParams.get('business');
 
-    let query = sb.from('businesses').select('*');
+    let query = sb.from('businesses').select('id, name, slug, pounds_per_point, win_back_days, google_review_link');
     query = businessSlug ? query.eq('slug', businessSlug) : query.eq('name', 'Demo Café');
     const { data, error } = await query.single();
 
@@ -196,9 +190,6 @@
     document.getElementById('signup-btn').disabled = false;
     document.getElementById('cust-business-name').textContent = business.name;
 
-    // Points formula: this business's own £-per-point ratio, defaulting to
-    // £5 = 1 point if the business hasn't set one. Same formula for every
-    // business — only the ratio itself changes, never hardcoded ranges.
     poundsPerPoint = business.pounds_per_point || 5;
     const noteEl = document.getElementById('points-rate-note');
     if (noteEl) noteEl.textContent = `£${poundsPerPoint} spent = 1 point`;
@@ -206,9 +197,6 @@
     const { data: rw } = await sb.from('rewards').select('*').eq('business_id', business.id).order('cost');
     rewards = rw || [];
 
-    // Work out which single screen this link is for, and lock the page to it.
-    // A customer's personal link, the till's signup link, and staff's own link
-    // must never show each other's tabs or tools.
     const params = new URLSearchParams(window.location.search);
     const custId = params.get('customer');
     const mode = params.get('mode');
@@ -225,9 +213,18 @@
       setInterval(() => loadCustomerView(custId), 4000);
     } else if (mode === 'staff') {
       const alreadyUnlocked = sessionStorage.getItem('staffUnlocked_' + business.id) === 'yes';
-      if (business.staff_pin && !alreadyUnlocked) {
+      if (!alreadyUnlocked) {
         const entered = prompt('Enter staff PIN:');
-        if (entered !== business.staff_pin) {
+        const pinRes = await fetch(GHL_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+          },
+          body: JSON.stringify({ action: 'check_pin', businessId: business.id, pin: entered })
+        }).then(r => r.json()).catch(() => ({ valid: false }));
+
+        if (!pinRes.valid) {
           document.body.innerHTML = '<div style="padding:60px 20px; text-align:center; font-family:sans-serif; color:#6b6a63;">Incorrect PIN. Reload this page to try again.</div>';
           return;
         }
@@ -238,9 +235,6 @@
     } else if (mode === 'signup') {
       lockToScreen('signup');
     }
-    // No params at all = internal test view only, keeps all 3 tabs for dev use.
-    // Real links given out to customers/staff/till must always include one
-    // of the above params.
   }
 
   async function doSignup() {
@@ -249,8 +243,6 @@
     if (!name || !rawPhone) { showToast('Enter a name and phone number'); return; }
     const phone = rawPhone.replace(/[\s\-()]/g, '');
 
-    // Check if this phone number already signed up for this business —
-    // reuse that record instead of creating a duplicate.
     const { data: existing } = await sb.from('customers')
       .select('*').eq('business_id', business.id).eq('phone', phone).maybeSingle();
 
@@ -277,7 +269,6 @@
     new QRCode(document.getElementById('qr-render'), { text: link, width: 180, height: 180 });
     showToast('Customer created');
 
-    // Text the customer their personal link via GHL
     try {
       const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
@@ -393,7 +384,6 @@
     loadCustomerList();
     showToast('+' + n + ' points — new balance ' + newPoints);
 
-    // Log this visit to GHL for reporting
     fetch(GHL_FUNCTION_URL, {
       method: 'POST',
       headers: {
@@ -416,7 +406,6 @@
     loadCustomerList();
     showToast(name + ' redeemed — new balance ' + newPoints);
 
-    // Log this visit to GHL for reporting
     fetch(GHL_FUNCTION_URL, {
       method: 'POST',
       headers: {
@@ -426,8 +415,6 @@
       body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
     }).catch(e => console.error('GHL visit log failed', e));
 
-    // Ask for a Google review a few seconds after redemption, as its own
-    // separate message — fires every single redeem, not just the first one.
     setTimeout(() => {
       fetch(GHL_FUNCTION_URL, {
         method: 'POST',
@@ -499,8 +486,6 @@
       <div class="note">This link is yours — bookmark it or reopen the text we sent. No app, no login.</div>
     `;
 
-    // Render the customer's own QR (same link as this page) so staff have
-    // something to scan on this and every future visit.
     const qrEl = document.getElementById('cust-qr-render');
     if (qrEl) {
       qrEl.innerHTML = '';
@@ -508,7 +493,6 @@
     }
   }
 
-  // Camera scanning
   async function toggleScan() {
     const frame = document.getElementById('scan-frame');
     const btn = document.getElementById('scan-toggle');
