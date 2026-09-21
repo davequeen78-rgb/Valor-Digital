@@ -224,6 +224,15 @@
       loadCustomerView(custId);
       setInterval(() => loadCustomerView(custId), 4000);
     } else if (mode === 'staff') {
+      const alreadyUnlocked = sessionStorage.getItem('staffUnlocked_' + business.id) === 'yes';
+      if (business.staff_pin && !alreadyUnlocked) {
+        const entered = prompt('Enter staff PIN:');
+        if (entered !== business.staff_pin) {
+          document.body.innerHTML = '<div style="padding:60px 20px; text-align:center; font-family:sans-serif; color:#6b6a63;">Incorrect PIN. Reload this page to try again.</div>';
+          return;
+        }
+        sessionStorage.setItem('staffUnlocked_' + business.id, 'yes');
+      }
       lockToScreen('staff');
       loadCustomerList();
     } else if (mode === 'signup') {
