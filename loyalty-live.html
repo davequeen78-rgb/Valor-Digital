@@ -156,7 +156,6 @@
       document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       document.getElementById(t.dataset.screen).classList.add('active');
-      if (t.dataset.screen === 'staff') loadCustomerList();
     });
   });
 
@@ -231,7 +230,6 @@
         sessionStorage.setItem('staffUnlocked_' + business.id, 'yes');
       }
       lockToScreen('staff');
-      loadCustomerList();
     } else if (mode === 'signup') {
       lockToScreen('signup');
     }
@@ -241,34 +239,8 @@
     const name = document.getElementById('su-name').value.trim();
     const rawPhone = document.getElementById('su-phone').value.trim();
     if (!name || !rawPhone) { showToast('Enter a name and phone number'); return; }
-    const phone = rawPhone.replace(/[\s\-()]/g, '');
 
-    const { data: existing } = await sb.from('customers')
-      .select('*').eq('business_id', business.id).eq('phone', phone).maybeSingle();
-
-    let data, error;
-    if (existing) {
-      ({ data, error } = await sb.from('customers')
-        .update({ name })
-        .eq('id', existing.id)
-        .select().single());
-    } else {
-      ({ data, error } = await sb.from('customers')
-        .insert({ business_id: business.id, name, phone, points: 0 })
-        .select().single());
-    }
-
-    if (error) { showToast('Error creating customer'); console.error(error); return; }
-
-    const link = window.location.origin + window.location.pathname + '?customer=' + data.id + (business.slug ? '&business=' + encodeURIComponent(business.slug) : '');
-    document.getElementById('signup-form').style.display = 'none';
-    document.getElementById('signup-result').style.display = 'block';
-    document.getElementById('signup-link').textContent = link;
-    document.getElementById('signup-points').textContent = data.points + ' points';
-    document.getElementById('qr-render').innerHTML = '';
-    new QRCode(document.getElementById('qr-render'), { text: link, width: 180, height: 180 });
-    showToast('Customer created');
-
+    let result;
     try {
       const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
@@ -277,22 +249,38 @@
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
         body: JSON.stringify({
+          action: 'signup',
           businessId: business.id,
-          phone: phone,
+          businessSlug: business.slug,
+          cardLinkBase: window.location.origin + window.location.pathname,
           name: name,
-          message: `Hi ${name}, you're in! Here's your loyalty card: ${link}`
+          phone: rawPhone,
         })
       });
-      const result = await res.json();
-      if (result.success) {
-        showToast('Text sent with their card link');
-      } else {
-        console.error('Message send failed', result);
-        showToast('Text failed: ' + (result.error || JSON.stringify(result)).slice(0, 120), true);
-      }
+      result = await res.json();
     } catch (e) {
-      console.error('Could not reach messaging function', e);
-      showToast('Text failed: ' + String(e).slice(0, 120), true);
+      showToast('Could not create customer — check your connection', true);
+      console.error(e);
+      return;
+    }
+
+    if (!result.success) {
+      showToast('Error creating customer: ' + (result.error || 'unknown'), true);
+      console.error(result);
+      return;
+    }
+
+    document.getElementById('signup-form').style.display = 'none';
+    document.getElementById('signup-result').style.display = 'block';
+    document.getElementById('signup-link').textContent = result.link;
+    document.getElementById('signup-points').textContent = result.customer.points + ' points';
+    document.getElementById('qr-render').innerHTML = '';
+    new QRCode(document.getElementById('qr-render'), { text: result.link, width: 180, height: 180 });
+
+    if (result.textSent) {
+      showToast('Text sent with their card link');
+    } else {
+      showToast('Card created, but text failed: ' + (result.textError || 'unknown').toString().slice(0, 100), true);
     }
   }
 
@@ -303,14 +291,7 @@
     document.getElementById('signup-result').style.display = 'none';
   }
 
-  let allCustomers = [];
-
-  async function loadCustomerList() {
-    const { data, error } = await sb.from('customers').select('*').eq('business_id', business.id).order('created_at', { ascending: false }).limit(1000);
-    allCustomers = data || [];
-    filterCustomerList();
-    if (error) console.error(error);
-  }
+  let searchDebounce = null;
 
   function renderCustomerList(list) {
     const el = document.getElementById('customer-list');
@@ -329,16 +310,45 @@
     const q = document.getElementById('customer-search').value.trim().replace(/[\s\-()]/g, '');
     const el = document.getElementById('customer-list');
     if (!q) { el.innerHTML = '<div class="spinner-note">Type a customer\'s phone number above.</div>'; return; }
-    const filtered = allCustomers.filter(c => c.phone.replace(/[\s\-()]/g, '').includes(q));
-    renderCustomerList(filtered);
+
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(async () => {
+      el.innerHTML = '<div class="spinner-note">Searching…</div>';
+      try {
+        const res = await fetch(GHL_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+          },
+          body: JSON.stringify({ action: 'search_customers', businessId: business.id, phone: q })
+        });
+        const result = await res.json();
+        renderCustomerList(result.customers || []);
+      } catch (e) {
+        el.innerHTML = '<div class="spinner-note">Search failed — try again.</div>';
+      }
+    }, 300);
   }
 
   async function selectCustomer(id) {
-    const { data, error } = await sb.from('customers').select('*').eq('id', id).single();
-    if (error || !data) { showToast('Could not load customer'); return; }
-    selectedCustomer = data;
-    renderStaffSelection();
-    showToast('Selected: ' + data.name);
+    try {
+      const res = await fetch(GHL_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ action: 'get_customer', businessId: business.id, customerId: id })
+      });
+      const result = await res.json();
+      if (!result.success || !result.customer) { showToast('Could not load customer'); return; }
+      selectedCustomer = result.customer;
+      renderStaffSelection();
+      showToast('Selected: ' + selectedCustomer.name);
+    } catch (e) {
+      showToast('Could not load customer');
+    }
   }
 
   function renderStaffSelection() {
@@ -375,63 +385,51 @@
 
   async function addPoints(n) {
     if (!selectedCustomer) return;
-    const newPoints = selectedCustomer.points + n;
-    const { error: e1 } = await sb.from('customers').update({ points: newPoints, last_activity: new Date().toISOString() }).eq('id', selectedCustomer.id);
-    const { error: e2 } = await sb.from('transactions').insert({ customer_id: selectedCustomer.id, business_id: business.id, type: 'add', amount: n });
-    if (e1 || e2) { showToast('Error adding points'); return; }
-    selectedCustomer.points = newPoints;
-    renderStaffSelection();
-    loadCustomerList();
-    showToast('+' + n + ' points — new balance ' + newPoints);
-
-    fetch(GHL_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
-      },
-      body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
-    }).catch(e => console.error('GHL visit log failed', e));
-  }
-
-  async function redeem(rewardId, cost, name) {
-    if (!selectedCustomer) return;
-    if (selectedCustomer.points < cost) { showToast('Not enough points — ' + (cost - selectedCustomer.points) + ' more needed'); return; }
-    const newPoints = selectedCustomer.points - cost;
-    const { error: e1 } = await sb.from('customers').update({ points: newPoints, last_activity: new Date().toISOString() }).eq('id', selectedCustomer.id);
-    const { error: e2 } = await sb.from('transactions').insert({ customer_id: selectedCustomer.id, business_id: business.id, type: 'redeem', amount: cost, reward_name: name });
-    if (e1 || e2) { showToast('Error redeeming'); return; }
-    selectedCustomer.points = newPoints;
-    renderStaffSelection();
-    loadCustomerList();
-    showToast(name + ' redeemed — new balance ' + newPoints);
-
-    fetch(GHL_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
-      },
-      body: JSON.stringify({ action: 'log_visit', businessId: business.id, customerName: selectedCustomer.name, businessName: business.name })
-    }).catch(e => console.error('GHL visit log failed', e));
-
-    setTimeout(() => {
-      fetch(GHL_FUNCTION_URL, {
+    try {
+      const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
-        body: JSON.stringify({
-          action: 'request_review',
-          businessId: business.id,
-          phone: selectedCustomer.phone,
-          name: selectedCustomer.name,
-          businessName: business.name,
-          reviewLink: business.google_review_link || null
-        })
-      }).catch(e => console.error('Review request failed', e));
-    }, 5000);
+        body: JSON.stringify({ action: 'add_points', businessId: business.id, customerId: selectedCustomer.id, amount: n, businessName: business.name })
+      });
+      const result = await res.json();
+      if (!result.success) { showToast('Error adding points: ' + (result.error || 'unknown')); return; }
+      selectedCustomer.points = result.newPoints;
+      renderStaffSelection();
+      filterCustomerList();
+      showToast('+' + n + ' points — new balance ' + result.newPoints);
+    } catch (e) {
+      showToast('Error adding points — check your connection');
+    }
+  }
+
+  async function redeem(rewardId, cost, name) {
+    if (!selectedCustomer) return;
+    try {
+      const res = await fetch(GHL_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ action: 'redeem', businessId: business.id, customerId: selectedCustomer.id, rewardId, businessName: business.name })
+      });
+      const result = await res.json();
+      if (!result.success) {
+        showToast(result.error === 'Not enough points'
+          ? 'Not enough points — ' + result.needed + ' more needed'
+          : 'Error redeeming: ' + (result.error || 'unknown'));
+        return;
+      }
+      selectedCustomer.points = result.newPoints;
+      renderStaffSelection();
+      filterCustomerList();
+      showToast(result.rewardName + ' redeemed — new balance ' + result.newPoints);
+    } catch (e) {
+      showToast('Error redeeming — check your connection');
+    }
   }
 
   async function sendPromo() {
@@ -463,9 +461,24 @@
   }
 
   async function loadCustomerView(id) {
-    const { data, error } = await sb.from('customers').select('*').eq('id', id).single();
     const el = document.getElementById('customer-content');
-    if (error || !data) { el.innerHTML = '<div class="spinner-note">Could not find this card.</div>'; return; }
+    let data;
+    try {
+      const res = await fetch(GHL_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ action: 'get_customer', businessId: business.id, customerId: id })
+      });
+      const result = await res.json();
+      if (!result.success || !result.customer) { el.innerHTML = '<div class="spinner-note">Could not find this card.</div>'; return; }
+      data = result.customer;
+    } catch (e) {
+      el.innerHTML = '<div class="spinner-note">Could not load — check your connection.</div>';
+      return;
+    }
 
     const nextReward = rewards.filter(r => r.cost > data.points).sort((a,b) => a.cost - b.cost)[0];
     const target = nextReward ? nextReward.cost : (rewards[rewards.length-1] ? rewards[rewards.length-1].cost : data.points);
