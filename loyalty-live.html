@@ -79,6 +79,9 @@
       <label>Phone number</label>
       <input id="su-phone" placeholder="07123 456789">
       <button class="btn btn-primary" id="signup-btn" onclick="doSignup()" disabled>Join now</button>
+      <p style="font-size:11px; color:#9CA3AF; margin-top:8px; text-align:center;">
+        By signing up, you agree to receive text messages from this business, including your loyalty card link and occasional promotions. Msg &amp; data rates may apply.
+      </p>
     </div>
     <div id="signup-result" style="display:none; margin-top:28px;">
       <div class="card" style="text-align:center;">
@@ -253,6 +256,8 @@
       }
       lockToScreen('staff');
     } else if (mode === 'signup') {
+      lockToScreen('signup');
+    } else {
       lockToScreen('signup');
     }
   }
