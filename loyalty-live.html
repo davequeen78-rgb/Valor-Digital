@@ -166,6 +166,7 @@
   let poundsPerPoint = 5;
   let pointsPerVisit = null;
   let visitCount = 1;
+  let staffPin = null; // held in memory (and sessionStorage) once staff unlock — sent with every staff action
 
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => {
@@ -236,8 +237,10 @@
       loadCustomerView(custId);
       setInterval(() => loadCustomerView(custId), 4000);
     } else if (mode === 'staff') {
-      const alreadyUnlocked = sessionStorage.getItem('staffUnlocked_' + business.id) === 'yes';
-      if (!alreadyUnlocked) {
+      const storedPin = sessionStorage.getItem('staffPin_' + business.id);
+      if (storedPin) {
+        staffPin = storedPin;
+      } else {
         const entered = prompt('Enter staff PIN:');
         const pinRes = await fetch(GHL_FUNCTION_URL, {
           method: 'POST',
@@ -252,12 +255,11 @@
           document.body.innerHTML = '<div style="padding:60px 20px; text-align:center; font-family:sans-serif; color:#6b6a63;">Incorrect PIN. Reload this page to try again.</div>';
           return;
         }
-        sessionStorage.setItem('staffUnlocked_' + business.id, 'yes');
+        staffPin = entered || '';
+        sessionStorage.setItem('staffPin_' + business.id, staffPin);
       }
       lockToScreen('staff');
     } else if (mode === 'signup') {
-      lockToScreen('signup');
-    } else {
       lockToScreen('signup');
     }
   }
@@ -348,7 +350,7 @@
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + SUPABASE_KEY,
           },
-          body: JSON.stringify({ action: 'search_customers', businessId: business.id, phone: q })
+          body: JSON.stringify({ action: 'search_customers', businessId: business.id, phone: q, pin: staffPin })
         });
         const result = await res.json();
         renderCustomerList(result.customers || []);
@@ -383,10 +385,15 @@
     document.getElementById('staff-actions').style.display = 'block';
     document.getElementById('sel-name').textContent = selectedCustomer.name;
     document.getElementById('sel-balance').textContent = selectedCustomer.points + ' points available';
-    document.getElementById('reward-buttons').innerHTML = rewards.map(r => `
-      <button class="reward-btn ${selectedCustomer.points < r.cost ? 'disabled' : ''}" onclick="redeem('${r.id}', ${r.cost}, '${r.name}')">
+    document.getElementById('reward-buttons').innerHTML = rewards.map(r => {
+      const safeName = r.name.replace(/'/g, "\\'");
+      const handler = r.type === 'percentage'
+        ? `redeemPercentage('${r.id}', ${r.cost}, '${safeName}', ${r.percent_off})`
+        : `redeem('${r.id}', ${r.cost}, '${safeName}')`;
+      return `<button class="reward-btn ${selectedCustomer.points < r.cost ? 'disabled' : ''}" onclick="${handler}">
         <span>${r.name}</span><span class="reward-cost">${r.cost} pts</span>
-      </button>`).join('');
+      </button>`;
+    }).join('');
   }
 
   function updateSpendPreview() {
@@ -431,7 +438,7 @@
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
-        body: JSON.stringify({ action: 'add_points', businessId: business.id, customerId: selectedCustomer.id, amount: n, businessName: business.name })
+        body: JSON.stringify({ action: 'add_points', businessId: business.id, customerId: selectedCustomer.id, amount: n, businessName: business.name, pin: staffPin })
       });
       const result = await res.json();
       if (!result.success) { showToast('Error adding points: ' + (result.error || 'unknown')); return; }
@@ -444,16 +451,18 @@
     }
   }
 
-  async function redeem(rewardId, cost, name) {
+  async function redeem(rewardId, cost, name, billTotal) {
     if (!selectedCustomer) return;
     try {
+      const payload = { action: 'redeem', businessId: business.id, customerId: selectedCustomer.id, rewardId, businessName: business.name, pin: staffPin };
+      if (billTotal) payload.billTotal = billTotal;
       const res = await fetch(GHL_FUNCTION_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
-        body: JSON.stringify({ action: 'redeem', businessId: business.id, customerId: selectedCustomer.id, rewardId, businessName: business.name })
+        body: JSON.stringify(payload)
       });
       const result = await res.json();
       if (!result.success) {
@@ -465,10 +474,22 @@
       selectedCustomer.points = result.newPoints;
       renderStaffSelection();
       filterCustomerList();
-      showToast(result.rewardName + ' redeemed — new balance ' + result.newPoints);
+      const discountNote = result.discountAmount != null ? ' — £' + result.discountAmount.toFixed(2) + ' off' : '';
+      showToast(result.rewardName + ' redeemed' + discountNote + ' — new balance ' + result.newPoints);
     } catch (e) {
       showToast('Error redeeming — check your connection');
     }
+  }
+
+  function redeemPercentage(rewardId, cost, name, percentOff) {
+    if (!selectedCustomer) return;
+    const billStr = prompt(name + ' — bill total for this redemption:');
+    if (billStr === null) return;
+    const bill = parseFloat(billStr);
+    if (!bill || bill <= 0) { showToast('Enter a valid bill total'); return; }
+    const discount = Math.round(bill * (percentOff / 100) * 100) / 100;
+    if (!confirm(name + ': £' + discount.toFixed(2) + ' off a £' + bill.toFixed(2) + ' bill. Redeem for ' + cost + ' points?')) return;
+    redeem(rewardId, cost, name, bill);
   }
 
   async function sendPromo() {
@@ -485,7 +506,7 @@
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + SUPABASE_KEY,
         },
-        body: JSON.stringify({ action: 'send_promo', businessId: business.id, message })
+        body: JSON.stringify({ action: 'send_promo', businessId: business.id, message, pin: staffPin })
       });
       const result = await res.json();
       if (result.success) {
